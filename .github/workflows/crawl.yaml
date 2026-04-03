@@ -1,0 +1,39 @@
+name: crawl
+on:
+  push:
+    branches: main
+  schedule:
+  - cron: '24 6/6 * * *'
+  workflow_dispatch:
+concurrency: crawl
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout Git repo
+      run: |-
+        git config --global init.defaultBranch main
+        git init .
+        git remote add origin '${{ github.server_url }}/${{ github.repository }}.git'
+        git config set --local advice.detachedHead false
+        git config set --local 'http.${{ github.server_url }}.extraHeader' "Authorization: Basic $(echo -n 'x-access-token:${{ github.token }}' | base64 -w0)"
+        git fetch --depth 1 origin '${{ github.sha }}'
+        git checkout --progress FETCH_HEAD
+    - name: Configure Git user name/email
+      run: |-
+        git config set user.name 'github-actions[bot]'
+        git config set user.email '${{ github.actor_id }}+github-actions[bot]@users.noreply.github.com'
+    - name: Crawl packages and synchronize to GitHub releases
+      env:
+        DEBUG_LOG: ${{ runner.debug }}
+        GH_TOKEN: ${{ github.token }}
+        REDHAT_API_OFFLINE_TOKEN: ${{ secrets.REDHAT_API_OFFLINE_TOKEN }}
+        REDHAT_USER_ID: ${{ secrets.REDHAT_USER_ID }} # for CI log masking only
+        TMPDIR: ${{ runner.temp }}
+      run: ./crawl.sh
+    - name: Cleanup Git repo
+      if: always()
+      run: rm -rf $PWD
